@@ -12,7 +12,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout repository
@@ -24,12 +27,26 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android dependencies
+      - name: Locate Android SDK manager
+        shell: bash
         run: |
-          sdkmanager "platforms;android-35" \
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Android sdkmanager was not found"
+            exit 1
+          fi
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Accept licenses and install Android dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install \
+            "platforms;android-35" \
             "build-tools;35.0.0" \
             "platform-tools" \
             "ndk;27.2.12479018" \
@@ -41,9 +58,12 @@ jobs:
           gradle-version: "8.9"
 
       - name: Extract ULTRON source ZIP
+        shell: bash
         run: |
+          set -euo pipefail
           unzip -q ULTRON-0.4.1-Full-Source.zip
           test -f ultron_final_work/app/build.gradle.kts
+          test -f ultron_final_work/settings.gradle.kts
 
       - name: Run unit tests
         working-directory: ultron_final_work
