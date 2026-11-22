@@ -1,12 +1,11 @@
+
 name: Build ULTRON APK
 
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
-    paths:
-      - "ULTRON-Native-Local-AI-Source.zip"
-      - ".github/workflows/build-ultron.yml"
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -14,56 +13,50 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Extract Android source ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f ULTRON-Native-Local-AI-Source.zip
-          unzip -o ULTRON-Native-Local-AI-Source.zip -d .
-          test -f settings.gradle.kts
-          test -f app/build.gradle.kts
-
-      - name: Set up Java
-        uses: actions/setup-java@v6
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: "platform-tools"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK and native build tools
-        shell: bash
+      - name: Install Android dependencies
         run: |
-          set -euo pipefail
-          sdkmanager --install \
-            "platforms;android-35" \
+          sdkmanager "platforms;android-35" \
             "build-tools;35.0.0" \
             "platform-tools" \
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
+      - name: Extract ULTRON source ZIP
+        run: |
+          unzip -q ULTRON-0.4.1-Full-Source.zip
+          test -f ultron_final_work/app/build.gradle.kts
+
       - name: Run unit tests
+        working-directory: ultron_final_work
         run: gradle --no-daemon :app:testDebugUnitTest
 
-      - name: Build debug APK
+      - name: Build ULTRON debug APK
+        working-directory: ultron_final_work
         run: gradle --no-daemon :app:assembleDebug
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v7
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: ultron-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: ULTRON-APK
+          path: ultron_final_work/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
