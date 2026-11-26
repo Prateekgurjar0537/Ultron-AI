@@ -1,45 +1,32 @@
-
 name: Build ULTRON APK
-
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-
+    branches: [main]
 permissions:
   contents: read
-
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Locate Android SDK manager
         shell: bash
         run: |
           set -euo pipefail
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "Android sdkmanager was not found"
-            exit 1
-          fi
+          test -n "$SDKMANAGER"
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
-
       - name: Accept licenses and install Android dependencies
         shell: bash
         run: |
@@ -51,28 +38,35 @@ jobs:
             "platform-tools" \
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-
       - name: Extract ULTRON source ZIP
+        run: |
+          set -euo pipefail
+          unzip -q ULTRON-1.4.0-FINAL-SOURCE.zip
+          test -f ultron_final_work/app/build.gradle.kts
+          test -f ultron_final_work/settings.gradle.kts
+      - name: Run unit tests (retry transient repository failures)
+        working-directory: ultron_final_work
         shell: bash
         run: |
           set -euo pipefail
-          unzip -q ULTRON-0.4.1-Full-Source.zip
-          test -f ultron_final_work/app/build.gradle.kts
-          test -f ultron_final_work/settings.gradle.kts
-
-      - name: Run unit tests
+          for attempt in 1 2 3; do
+            if gradle --no-daemon --stacktrace --max-workers=2 :app:testDebugUnitTest; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 30)); fi
+          done
+          exit 1
+      - name: Build ULTRON debug APK (retry transient repository failures)
         working-directory: ultron_final_work
-        run: gradle --no-daemon :app:testDebugUnitTest
-
-      - name: Build ULTRON debug APK
-        working-directory: ultron_final_work
-        run: gradle --no-daemon :app:assembleDebug
-
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if gradle --no-daemon --stacktrace --max-workers=2 :app:assembleDebug; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 30)); fi
+          done
+          exit 1
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
